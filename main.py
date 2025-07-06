@@ -4,7 +4,6 @@ import re
 import tempfile
 import aiofiles
 import aiohttp
-import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
@@ -30,11 +29,11 @@ class AstrBot(Star):
         user_id = event.get_sender_id()
         self.file_name = await self._get_keyword("tg", event)
         if user_id in self.waiting_for_file:
-            yield Comp.Plain("请勿重复上传")
+            yield event.plain_result("请勿重复上传")
             return
 
         self.waiting_for_file[user_id] = True
-        yield Comp.Plain("请发送文件")
+        yield event.plain_result("请发送文件")
 
         async def timeout_task(user_id):
             await asyncio.sleep(60)
@@ -42,9 +41,9 @@ class AstrBot(Star):
                 del self.waiting_for_file[user_id]
                 if user_id in self.timeout_tasks:
                     del self.timeout_tasks[user_id]
-                    yield Comp.Plain("上传超时")
+                    yield event.plain_result("文件上传超时，请重新发送文件")
                     logger.info(f"用户 {user_id} 文件上传超时")
-                yield Comp.Plain("上传超时")
+                yield event.plain_result("文件上传超时，请重新发送文件")
 
         task = asyncio.create_task(timeout_task(user_id))
         self.timeout_tasks[user_id] = task
@@ -59,7 +58,7 @@ class AstrBot(Star):
                 task = self.timeout_tasks[user_id]
                 task.cancel()
                 del self.timeout_tasks[user_id]
-            yield Comp.Plain("取消上传")
+            yield event.plain_result("取消上传")
             return
 
         if user_id not in self.waiting_for_file:
@@ -93,22 +92,22 @@ class AstrBot(Star):
                         file_url = msg.url
                 except Exception as e:
                     logger.error(e)
-                    logger.error(f"图片处理失败: {str(e)}")
+                    logger.error(f"文件处理失败: {str(e)}")
 
         if not file_url:
-            yield Comp.Plain("未找到文件")
+            yield event.plain_result("❌ 文件解析失败，请重试")
             return
 
         try:
-            yield Comp.Plain(f"开始上传文件: {file_url}")
+            yield event.plain_result("开始处理文件...")
             if file_url.startswith("http"):
                 file_path = await self.download_file(file_url)
                 result = await self.upload_file(file_path)
-                yield Comp.Plain(result)
+                yield event.plain_result(result)
 
         except Exception as e:
             logger.error(e)
-            yield Comp.Plain(f"图片处理失败: {str(e)}")
+            yield event.plain_result(f"图片处理失败: {str(e)}")
             return
 
     async def _get_keyword(self, key, event: AstrMessageEvent):
