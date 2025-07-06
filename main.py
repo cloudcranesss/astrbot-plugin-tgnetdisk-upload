@@ -30,7 +30,7 @@ class AstrBot(Star):
             await self.session.close()
 
     @filter.regex(r"^tg(.+)")
-    async def start_command(self, event: AstrMessageEvent):  # 只保留self和event参数
+    async def start_command(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
         self.file_name = await self._get_keyword("tg", event.get_messages())
         if user_id in self.waiting_for_file:
@@ -47,13 +47,11 @@ class AstrBot(Star):
                 if user_id in self.timeout_tasks:
                     del self.timeout_tasks[user_id]
                 logger.info(f"用户 {user_id} 文件上传超时")
-                # 注意：这里无法直接使用yield，所以改为记录日志
-
         task = asyncio.create_task(timeout_task(user_id))
         self.timeout_tasks[user_id] = task
 
     @filter.event_message_type(EventMessageType.ALL)
-    async def upload(self, event: AstrMessageEvent):  # 只保留self和event参数
+    async def upload(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
 
         if user_id in self.waiting_for_file and event.get_message_outline().strip().lower() == "q":
@@ -88,19 +86,26 @@ class AstrBot(Star):
         logger.info(message_chain)
 
         file_url = None
+        file_name = None  # 存储原始文件名
 
         for msg in message_chain:
             if getattr(msg, 'type', '') == 'File':
                 try:
                     if hasattr(msg, 'url') and msg.url:
                         file_url = msg.url
+                    if hasattr(msg, 'name') and msg.name:
+                        file_name = msg.name
                 except Exception as e:
                     logger.error(e)
                     logger.error(f"文件处理失败: {str(e)}")
 
         if not file_url:
-            yield event.plain_result("❌❌ 文件解析失败，请重试")
+            yield event.plain_result("❌ 文件解析失败，请重试")
             return
+
+        # 使用原始文件名（如果存在）
+        if file_name:
+            self.file_name = file_name
 
         try:
             yield event.plain_result("开始处理文件...")
@@ -158,14 +163,23 @@ class AstrBot(Star):
             return None
 
     async def upload_file(self, file_path):
-        """上传文件"""
+        """上传文件 - 修复了files参数问题"""
         if not self.url:
             logger.error("未配置TG_NETWORK_DISK地址")
             return None
 
         upload_url = self.url + "/api"
         try:
-            async with self.session.post(upload_url, file={"image": open(file_path, "rb")}) as response:
+            # 使用FormData正确上传文件
+            data = aiohttp.FormData()
+            data.add_field(
+                'file',
+                open(file_path, 'rb'),
+                filename=self.file_name,
+                content_type='application/octet-stream'
+            )
+
+            async with self.session.post(upload_url, data=data) as response:
                 if response.status != 200:
                     error_msg = await response.text()
                     logger.error(f"上传文件错误: {error_msg}")
