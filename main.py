@@ -15,7 +15,7 @@ from astrbot.core.star.filter.event_message_type import EventMessageType
 class AstrBot(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.session = None
+        self.session = aiohttp.ClientSession()  # 初始化时创建session
         self.file_name = "demo.zip"
         self.config = config
         self.url = self.config.get("TG_NETWORK_DISK", "")
@@ -24,8 +24,13 @@ class AstrBot(Star):
         self.timeout_tasks: dict[str, asyncio.Task] = {}
         logger.info(f"TG_NETWORK_DISK: {self.url}")
 
+    async def close(self):
+        """关闭session"""
+        if self.session:
+            await self.session.close()
+
     @filter.regex(r"^tg(.+)")
-    async def start_command(self, event: AstrMessageEvent):
+    async def start_command(self, event: AstrMessageEvent):  # 只保留self和event参数
         user_id = event.get_sender_id()
         self.file_name = await self._get_keyword("tg", event.get_messages())
         if user_id in self.waiting_for_file:
@@ -41,15 +46,14 @@ class AstrBot(Star):
                 del self.waiting_for_file[user_id]
                 if user_id in self.timeout_tasks:
                     del self.timeout_tasks[user_id]
-                    yield event.plain_result("文件上传超时，请重新发送文件")
-                    logger.info(f"用户 {user_id} 文件上传超时")
-                yield event.plain_result("文件上传超时，请重新发送文件")
+                logger.info(f"用户 {user_id} 文件上传超时")
+                # 注意：这里无法直接使用yield，所以改为记录日志
 
         task = asyncio.create_task(timeout_task(user_id))
         self.timeout_tasks[user_id] = task
 
     @filter.event_message_type(EventMessageType.ALL)
-    async def upload(self, event: AstrMessageEvent):
+    async def upload(self, event: AstrMessageEvent):  # 只保留self和event参数
         user_id = event.get_sender_id()
 
         if user_id in self.waiting_for_file and event.get_message_outline().strip().lower() == "q":
@@ -95,46 +99,54 @@ class AstrBot(Star):
                     logger.error(f"文件处理失败: {str(e)}")
 
         if not file_url:
-            yield event.plain_result("❌ 文件解析失败，请重试")
+            yield event.plain_result("❌❌ 文件解析失败，请重试")
             return
 
         try:
             yield event.plain_result("开始处理文件...")
             if file_url.startswith("http"):
                 file_path = await self.download_file(file_url)
+                if not file_path:
+                    yield event.plain_result("文件下载失败")
+                    return
+
                 result = await self.upload_file(file_path)
-                yield event.plain_result(result)
+                if result:
+                    # 假设返回结果中有下载链接
+                    download_url = result.get("url", "上传成功")
+                    yield event.plain_result(f"✅ 上传成功\n🔗 {download_url}")
+                else:
+                    yield event.plain_result("❌ 上传失败")
+
+                # 清理临时文件
+                if os.path.exists(file_path):
+                    os.remove(file_path)
 
         except Exception as e:
             logger.error(e)
-            yield event.plain_result(f"图片处理失败: {str(e)}")
-            return
+            yield event.plain_result(f"❌ 文件处理失败: {str(e)}")
 
     async def _get_keyword(self, key, messages):
-        r1 = str (messages[0])
+        r1 = str(messages[0])
         r2 = re.findall(r"text='(.*?)'", r1)[0]
         keyword = r2.split(key)[1]
         logger.info(f"搜索关键词: {keyword}")
         return keyword
 
     async def download_file(self, url):
-        """
-        下载文件
-        """
-        if not self.session:
-            self.session = aiohttp.ClientSession()
-
+        """下载文件"""
         try:
             async with self.session.get(url) as response:
                 if response.status != 200:
-                    raise Exception(f"下载文件失败: HTTP {response.status}")
+                    logger.error(f"下载文件失败: HTTP {response.status}")
+                    return None
 
                 file_path = os.path.join(self.temp_dir, self.file_name)
 
                 async with aiofiles.open(file_path, "wb") as f:
-                    chuck_size = 1024 * 1024
+                    chunk_size = 1024 * 1024  # 1MB chunks
                     while True:
-                        chunk = await response.content.read(chuck_size)
+                        chunk = await response.content.read(chunk_size)
                         if not chunk:
                             break
                         await f.write(chunk)
@@ -145,22 +157,28 @@ class AstrBot(Star):
             logger.error(f"下载文件失败：{e}")
             return None
 
-        finally:
-            if response:
-                await response.release()
-                await self.session.close()
-
     async def upload_file(self, file_path):
-        url = self.url + "/api"
+        """上传文件"""
+        if not self.url:
+            logger.error("未配置TG_NETWORK_DISK地址")
+            return None
+
+        upload_url = self.url + "/api"
         try:
-            response = await self.session.post(url, files={"image": open(file_path, "rb")})
-            if response.status != 200:
-                error_msg = await response.text()
-                logger.error(f"上传文件错误: {error_msg}")
-                raise Exception(f"上传文件错误: HTTP {response.status}")
-            return await response.json()
+            async with aiofiles.open(file_path, "rb") as f:
+                file_content = await f.read()
+
+            data = aiohttp.FormData()
+            data.add_field('image', file_content, filename=self.file_name)
+
+            async with self.session.post(upload_url, data=data) as response:
+                if response.status != 200:
+                    error_msg = await response.text()
+                    logger.error(f"上传文件错误: {error_msg}")
+                    return None
+
+                return await response.json()
+
         except Exception as e:
             logger.error(f"上传文件失败：{e}")
             return None
-
-
