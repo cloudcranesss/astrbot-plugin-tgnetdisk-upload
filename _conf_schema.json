@@ -1,0 +1,8 @@
+{
+  "TG_NETWORK_DISK": {
+    "description": "TG_NETWORK_DISK 网址",
+    "type": "string",
+    "hint": "必填。例如 http://127.0.0.1:8080",
+    "default": ""
+  }
+}

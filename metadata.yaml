@@ -1,0 +1,5 @@
+name: astrbot-plugin-tgnetdisk-upload
+desc: TG_NETWORK_DISK 上传
+version: 1.0.0
+author: cloudcranesss
+repo: https://github.com/cloudcranesss/astrbot-plugin-tgnetdisk-upload
