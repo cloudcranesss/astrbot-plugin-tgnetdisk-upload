@@ -16,7 +16,7 @@ class AstrBot(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.session = None
-        self.file_name = "test.zip"
+        self.file_name = "demo.zip"
         self.config = config
         self.url = self.config.get("TG_NETWORK_DISK", "")
         self.temp_dir = tempfile.gettempdir()
@@ -27,7 +27,7 @@ class AstrBot(Star):
     @filter.regex(r"^tg(.+)")
     async def start_command(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
-        self.file_name = await self._get_keyword("tg", event)
+        self.file_name = await self._get_keyword("tg", event.get_messages())
         if user_id in self.waiting_for_file:
             yield event.plain_result("请勿重复上传")
             return
@@ -110,12 +110,11 @@ class AstrBot(Star):
             yield event.plain_result(f"图片处理失败: {str(e)}")
             return
 
-    async def _get_keyword(self, key, event: AstrMessageEvent):
-        messages = event.get_messages()
+    async def _get_keyword(self, key, messages):
         r1 = str (messages[0])
         r2 = re.findall(r"text='(.*?)'", r1)[0]
         keyword = r2.split(key)[1]
-        logger.info(f"用户 {event.get_sender_id()} 在群组 {event.get_group_id()} 搜索关键词: {keyword}")
+        logger.info(f"搜索关键词: {keyword}")
         return keyword
 
     async def download_file(self, url):
