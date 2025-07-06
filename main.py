@@ -25,10 +25,10 @@ class AstrBot(Star):
         self.timeout_tasks: dict[str, asyncio.Task] = {}
         logger.info(f"TG_NETWORK_DISK: {self.url}")
 
-    @filter.regex(r"^tg (.+)")
+    @filter.regex(r"^tg(.+)")
     async def start_command(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
-        self.file_name = await self._get_keyword("tg ", event)
+        self.file_name = await self._get_keyword("tg", event)
         if user_id in self.waiting_for_file:
             yield Comp.Plain("请勿重复上传")
             return
