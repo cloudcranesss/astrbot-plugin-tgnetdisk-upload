@@ -165,13 +165,7 @@ class AstrBot(Star):
 
         upload_url = self.url + "/api"
         try:
-            async with aiofiles.open(file_path, "rb") as f:
-                file_content = await f.read()
-
-            data = aiohttp.FormData()
-            data.add_field('image', file_content, filename=self.file_name)
-
-            async with self.session.post(upload_url, data=data) as response:
+            async with self.session.post(upload_url, file={"image": open(file_path, "rb")}) as response:
                 if response.status != 200:
                     error_msg = await response.text()
                     logger.error(f"上传文件错误: {error_msg}")
