@@ -173,10 +173,8 @@ class AstrBot(Star):
             # 使用FormData正确上传文件
             data = aiohttp.FormData()
             data.add_field(
-                'file',
-                open(file_path, 'rb'),
-                filename=self.file_name,
-                content_type='application/octet-stream'
+                'image',
+                open(file_path, 'rb')
             )
 
             async with self.session.post(upload_url, data=data) as response:
